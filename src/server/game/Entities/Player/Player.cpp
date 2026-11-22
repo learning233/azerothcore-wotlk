@@ -150,7 +150,7 @@ enum CharacterCustomizeFlags
     CHAR_CUSTOMIZE_FLAG_RACE            = 0x00100000        // name, gender, race, etc...
 };
 
-static uint32 copseReclaimDelay[MAX_DEATH_COUNT] = { 30, 60, 120 };
+static uint32 copseReclaimDelay[MAX_DEATH_COUNT] = { 0, 30, 60, 120 };
 
 // we can disable this warning for this since it only
 // causes undefined behavior when passed to the base class constructor
@@ -4680,8 +4680,6 @@ void Player::KillPlayer()
 
     // 6 minutes until repop at graveyard
     m_deathTimer = 6 * MINUTE * IN_MILLISECONDS;
-
-    UpdateCorpseReclaimDelay();                             // dependent at use SetDeathPvP() call before kill
 
     int32 corpseReclaimDelay = CalculateCorpseReclaimDelay();
 
@@ -13335,9 +13333,11 @@ uint32 Player::GetCorpseReclaimDelay(bool pvp) const
         return 0;
 
     time_t now = GameTime::GetGameTime().count();
-    // 0..2 full period
+    // 0..3 full period
     // should be std::ceil(x)-1 but not floor(x)
     uint64 count = (now < m_deathExpireTime - 1) ? (m_deathExpireTime - 1 - now) / DEATH_EXPIRE_STEP : 0;
+    if (count >= MAX_DEATH_COUNT)
+        count = MAX_DEATH_COUNT - 1;
     return copseReclaimDelay[count];
 }
 

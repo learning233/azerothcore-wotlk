@@ -1,0 +1,14 @@
+[worldserver]
+
+###################################################################################################
+# WOB bootstrap
+#
+# 全部账号的新角色自动初始化 + 每次登录补货。
+# RefreshMode = topup: 只补到目标数量，不删多出来的物品。
+# RefreshMode = exact: 多出来的数量也扣掉，严格固定。
+###################################################################################################
+WobBootstrap.Enable = 1
+WobBootstrap.RefreshMode = topup
+# 猎人不再分配默认宠物；登录时由 AC 按 character_pet.slot=0 恢复上次出战宠物。
+WobBootstrap.GlyphLibrary = 1
+WobBootstrap.StablePanel = 1

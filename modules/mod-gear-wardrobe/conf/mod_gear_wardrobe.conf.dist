@@ -1,0 +1,17 @@
+##############################################################################
+# mod-gear-wardrobe
+#
+# 客户端在线装备页的衣柜后端。默认只允许 80 级及以下、精良及以上、武器/护甲，
+# 并通过 player->CanUseItem 校验职业/护甲/武器熟练/等级。
+# 精品范围（264-277 紫装目录）由客户端 equipment.json 选品控制；弹药不走衣柜，
+# 由 mod-wob-bootstrap 的 EnsureAmmo 按远程武器自动配发。
+##############################################################################
+
+[worldserver]
+
+#
+#    GearWardrobe.EnableWhitelist
+#        1 = 只允许 mod_gear_wardrobe_whitelist 表里的 entry
+#        0 = 允许所有通过基础校验的 80 级装备
+#
+GearWardrobe.EnableWhitelist = 0

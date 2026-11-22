@@ -650,19 +650,24 @@ void WorldSession::HandleReclaimCorpseOpcode(WorldPacket& recv_data)
     if (!corpse)
         return;
 
-    // prevent resurrect before 30-sec delay after body release not finished
-    if (time_t(corpse->GetGhostTime() + _player->GetCorpseReclaimDelay(corpse->GetType() == CORPSE_RESURRECTABLE_PVP)) > time_t(GameTime::GetGameTime().count()))
+    bool const pvp = corpse->GetType() == CORPSE_RESURRECTABLE_PVP;
+
+    // prevent resurrect before delay after body release not finished
+    if (time_t(corpse->GetGhostTime() + _player->GetCorpseReclaimDelay(pvp)) > time_t(GameTime::GetGameTime().count()))
         return;
 
     // skip phase check
     if (!corpse->IsInMap(_player) || !corpse->IsWithinDist(_player, CORPSE_RECLAIM_RADIUS, true))
         return;
 
-    // resurrect
-    _player->ResurrectPlayer(_player->InBattleground() ? 1.0f : 0.5f);
+    // resurrect at 50% health/mana (Spirit Guide wave resurrection stays 100%)
+    _player->ResurrectPlayer(0.5f);
 
     // spawn bones
     _player->SpawnCorpseBones();
+
+    // Only actual corpse reclaim advances consecutive reclaim penalty
+    _player->UpdateCorpseReclaimDelay(pvp);
 }
 
 void WorldSession::HandleResurrectResponseOpcode(WorldPacket& recv_data)

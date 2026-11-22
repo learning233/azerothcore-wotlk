@@ -1949,10 +1949,8 @@ void Player::UpdateAreaDependentAuras(uint32 newArea)
     }
 }
 
-void Player::UpdateCorpseReclaimDelay()
+void Player::UpdateCorpseReclaimDelay(bool pvp)
 {
-    bool pvp = m_ExtraFlags & PLAYER_EXTRA_PVP_DEATH;
-
     if ((pvp &&
          !sWorld->getBoolConfig(CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVP)) ||
         (!pvp && !sWorld->getBoolConfig(CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVE)))
@@ -1971,7 +1969,7 @@ void Player::UpdateCorpseReclaimDelay()
             m_deathExpireTime = now + MAX_DEATH_COUNT * DEATH_EXPIRE_STEP;
     }
     else
-        m_deathExpireTime = now + DEATH_EXPIRE_STEP;
+        m_deathExpireTime = now + 2 * DEATH_EXPIRE_STEP;
 }
 
 void Player::UpdateCharmedAI()
