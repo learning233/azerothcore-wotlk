@@ -55,13 +55,14 @@ namespace
         uint32 count;
     };
 
-    constexpr std::array<SupplyItem, 6> SUPPLIES = {{
+    constexpr std::array<SupplyItem, 7> SUPPLIES = {{
         { 34721, 20 }, // 霜纹绷带
         { 40771, 20 }, // 钴制破片手雷
         { 41509, 20 }, // 霜纹投网
         { 41166, 20 }, // 符文治疗注射器
         { 42545, 20 }, // 符文法力注射器
         { 43523, 80 }, // 魔法酪饼，4 组
+        { 8529, 40 },  // 诺格弗格药剂，2 组
     }};
 
     void EnsureLevel(Player* player, bool save = true)
