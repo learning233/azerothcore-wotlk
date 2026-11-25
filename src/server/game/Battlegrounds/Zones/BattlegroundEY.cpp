@@ -594,7 +594,9 @@ void BattlegroundEY::FillInitialWorldStates(WorldPackets::WorldState::InitWorldS
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_BLOOD_ELF_HORDE_CONTROL, _capturePointInfo[POINT_BLOOD_ELF].IsUnderControl(TEAM_HORDE));
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_BLOOD_ELF_ALLIANCE_CONTROL, _capturePointInfo[POINT_BLOOD_ELF].IsUnderControl(TEAM_ALLIANCE));
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_BLOOD_ELF_UNCONTROL, _capturePointInfo[POINT_BLOOD_ELF].IsUncontrolled());
-    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_FLAG, _flagState == BG_EY_FLAG_STATE_ON_BASE);
+    // During the 10s after a capture _flagState is already ON_BASE but the center flag
+    // is not respawned yet (RespawnFlag clears _flagCapturedObject and sends 1 then).
+    packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_FLAG, _flagState == BG_EY_FLAG_STATE_ON_BASE && _flagCapturedObject == 0);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_FLAG_STATE_HORDE, 1);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_FLAG_STATE_ALLIANCE, 1);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_EY_HORDE_RESOURCES, GetTeamScore(TEAM_HORDE));

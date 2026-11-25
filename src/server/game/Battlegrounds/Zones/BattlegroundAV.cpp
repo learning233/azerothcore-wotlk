@@ -1157,8 +1157,20 @@ void BattlegroundAV::FillInitialWorldStates(WorldPackets::WorldState::InitWorldS
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AV_SHOW_ALLIANCE_SCORE, GetStatus() == STATUS_IN_PROGRESS && BG_AV_SCORE_INITIAL_POINTS > 0 ? 1 : 0);
     packet.Worldstates.emplace_back(WORLD_STATE_BATTLEGROUND_AV_SHOW_HORDE_SCORE, GetStatus() == STATUS_IN_PROGRESS && BG_AV_SCORE_INITIAL_POINTS > 0 ? 1 : 0);
 
-    SendMineWorldStates(AV_NORTH_MINE);
-    SendMineWorldStates(AV_SOUTH_MINE);
+    // Mines must go into the INIT packet itself. SendMineWorldStates() broadcasts
+    // UpdateWorldState packets, which reach the joining player *before* this INIT
+    // and are then wiped by it, so late joiners lost the mine owners.
+    for (uint32 mine : { AV_NORTH_MINE, AV_SOUTH_MINE })
+    {
+        uint8 owner = 1; // neutral
+        if (m_Mine_Owner[mine] == TEAM_ALLIANCE)
+            owner = 0;
+        else if (m_Mine_Owner[mine] == TEAM_HORDE)
+            owner = 2;
+
+        for (uint8 i = 0; i < 3; ++i)
+            packet.Worldstates.emplace_back(BG_AV_MineWorldStates[mine][i], owner == i ? 1 : 0);
+    }
 }
 
 uint8 BattlegroundAV::GetWorldStateType(uint8 state, TeamId teamId) //this is used for node worldstates and returns values which fit good into the worldstatesarray
