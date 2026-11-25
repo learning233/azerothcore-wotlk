@@ -17039,14 +17039,6 @@ void Unit::SetShapeshiftForm(ShapeshiftForm form)
 
 bool Unit::IsInDisallowedMountForm() const
 {
-    if (SpellInfo const* transformSpellInfo = sSpellMgr->GetSpellInfo(getTransForm()))
-    {
-        if (transformSpellInfo->HasAttribute(SPELL_ATTR0_ALLOW_WHILE_MOUNTED))
-        {
-            return false;
-        }
-    }
-
     if (ShapeshiftForm form = GetShapeshiftForm())
     {
         SpellShapeshiftFormEntry const* shapeshift = sSpellShapeshiftFormStore.LookupEntry(form);
@@ -17058,6 +17050,14 @@ bool Unit::IsInDisallowedMountForm() const
         if (!(shapeshift->flags1 & SHAPESHIFT_FLAG_STANCE))
         {
             return true;
+        }
+    }
+
+    if (SpellInfo const* transformSpellInfo = sSpellMgr->GetSpellInfo(getTransForm()))
+    {
+        if (transformSpellInfo->HasAttribute(SPELL_ATTR0_ALLOW_WHILE_MOUNTED))
+        {
+            return false;
         }
     }
 

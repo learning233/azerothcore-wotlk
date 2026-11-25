@@ -406,6 +406,21 @@ namespace
                  patchedReagents, patchedTotems);
     }
 
+    // 诺格弗格药剂变骷髅（16591 -> display 7550，带 SPELL_ATTR0_NO_IMMUNITIES）：
+    // 补上 SPELL_ATTR0_ALLOW_WHILE_MOUNTED，同时通过 IsInDisallowedMountForm 与
+    // Spell.cpp 乘骑校验（SPELL_AURA_MOUNTED），允许变身骷髅后正常上马。
+    void PatchTransformMountSpellInfos()
+    {
+        constexpr uint32 SPELL_NOGGENFOGGER_SKELETON = 16591u;
+        if (SpellInfo* info = const_cast<SpellInfo*>(sSpellMgr->GetSpellInfo(SPELL_NOGGENFOGGER_SKELETON)))
+        {
+            info->Attributes |= SPELL_ATTR0_ALLOW_WHILE_MOUNTED;
+            LOG_INFO("module",
+                     "[mod-wob-bootstrap] 已允许变身法术 {} (骷髅) 乘骑",
+                     SPELL_NOGGENFOGGER_SKELETON);
+        }
+    }
+
     // 登录免费修满存量耐久损伤（耐久损失已在服务端 conf 全关，之后不再掉）
     void EnsureDurabilityFull(Player* player)
     {
@@ -1328,6 +1343,7 @@ namespace
             if (!LoadConfig().enabled)
                 return;
             PatchNoReagentSpellInfos();
+            PatchTransformMountSpellInfos();
         }
     };
 
