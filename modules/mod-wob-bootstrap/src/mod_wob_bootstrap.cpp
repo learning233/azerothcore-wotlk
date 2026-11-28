@@ -4,6 +4,7 @@
 #include "DatabaseEnv.h"
 #include "DatabaseScript.h"
 #include "DBCStores.h"
+#include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "ObjectMgr.h"
@@ -972,6 +973,33 @@ namespace
         ChatHandler(player->GetSession()).SendSysMessage("雕文已更新。");
     }
 
+    // 按客户端会话语言（默认兜底 zhCN）解析生物本地化名称，找不到再回退家族名。
+    std::string ResolveTamedPetName(Player* player, uint32 entry, CreatureTemplate const* ci)
+    {
+        std::string name;
+        LocaleConstant const sessionLoc = player->GetSession()->GetSessionDbLocaleIndex();
+        bool const validLoc = static_cast<uint32>(sessionLoc) < TOTAL_LOCALES;
+        if (CreatureLocale const* cl = sObjectMgr->GetCreatureLocale(entry))
+        {
+            if (validLoc)
+                ObjectMgr::GetLocaleString(cl->Name, sessionLoc, name);
+            if (name.empty())
+                ObjectMgr::GetLocaleString(cl->Name, LOCALE_zhCN, name);
+        }
+        if (name.empty() && ci)
+        {
+            if (CreatureFamilyEntry const* family = sCreatureFamilyStore.LookupEntry(ci->family))
+            {
+                if (validLoc && sessionLoc != LOCALE_enUS &&
+                    family->Name[sessionLoc] && *family->Name[sessionLoc])
+                    name = family->Name[sessionLoc];
+                else if (family->Name[LOCALE_zhCN] && *family->Name[LOCALE_zhCN])
+                    name = family->Name[LOCALE_zhCN];
+            }
+        }
+        return name;
+    }
+
     // 官方驯服逻辑：新宠直接成为出战宠物（EffectTameCreature / Player::CreatePet）。
     // 驯服时不允许有出战宠物或未归栏宠物；有出战宠物先提示存入兽栏（存栏需要空位）。
     bool TamePet(Player* player, uint32 entry)
@@ -1048,6 +1076,16 @@ namespace
         {
             ChatHandler(player->GetSession()).SendSysMessage("驯服失败，请稍后重试。");
             return false;
+        }
+
+        // AC CreateBaseAtCreatureInfo 默认写入服务端 DBC 语言的家族名（英文），
+        // 这里改用生物本地化中文名并刷新时间戳，保证出战/兽栏/宠物框一致显示中文。
+        std::string localizedName = ResolveTamedPetName(player, entry, ci);
+        if (!localizedName.empty())
+        {
+            pet->SetName(localizedName);
+            pet->SetUInt32Value(UNIT_FIELD_PET_NAME_TIMESTAMP,
+                               uint32(GameTime::GetGameTime().count()));
         }
 
         pet->SetLevel(80);
