@@ -7,6 +7,7 @@
 #include "Item.h"
 #include "Log.h"
 #include "ObjectMgr.h"
+#include "Opcodes.h"
 #include "Optional.h"
 #include "Pet.h"
 #include "Player.h"
@@ -17,7 +18,9 @@
 #include "SpellMgr.h"
 #include "Trainer.h"
 #include "World.h"
+#include "WorldPacket.h"
 #include "WorldScript.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <array>
@@ -663,6 +666,14 @@ namespace
         return false;
     }
 
+    bool HasDeadUnslottedHunterPet(PetStable const& stable)
+    {
+        for (PetStable::PetInfo const& info : stable.UnslottedPets)
+            if (info.Type == HUNTER_PET && info.Health == 0)
+                return true;
+        return false;
+    }
+
     // 官方口径：家族被动 + 按等级解锁的家族/默认技能。
     // 不再遍历原始 SkillLineAbility，避免把玩家天赋 aura 触发的宠物技能
     // （24394/75446/75447/75593）当家族技能白送。
@@ -785,7 +796,9 @@ namespace
         uint8 freeSlot = 1;
         for (PetStable::PetInfo& info : stable.UnslottedPets)
         {
-            if (info.Type != HUNTER_PET)
+            // 死亡宠物（Health == 0）不允许入栏：与 AC HandleStablePet 口径一致，
+            // 且留在 UnslottedPets 才能让猎人正常施放复活宠物（982）。
+            if (info.Type != HUNTER_PET || info.Health == 0)
             {
                 keptUnslotted.push_back(std::move(info));
                 continue;
@@ -915,6 +928,15 @@ namespace
             return;
         }
 
+        for (uint8 i = 0; i < MAX_GLYPH_SLOT_INDEX; ++i)
+        {
+            if (i != slot && player->GetGlyph(i) == glyphId)
+            {
+                ChatHandler(player->GetSession()).SendSysMessage("不能重复装备相同的雕文。");
+                return;
+            }
+        }
+
         if (uint32 oldGlyph = player->GetGlyph(slot))
         {
             if (GlyphPropertiesEntry const* old = sGlyphPropertiesStore.LookupEntry(oldGlyph))
@@ -1009,8 +1031,12 @@ namespace
 
         if (HasAnyUnslottedHunterPet(stable))
         {
-            ChatHandler(player->GetSession()).SendSysMessage(
-                "你还有未归栏的宠物，请先打开兽栏存入空位（兽栏满则先放生/取出一只），再驯服。");
+            if (HasDeadUnslottedHunterPet(stable))
+                ChatHandler(player->GetSession()).SendSysMessage(
+                    "你还有未复活的死亡宠物，请先施放【复活宠物】后再存入兽栏或放生，再来驯服。");
+            else
+                ChatHandler(player->GetSession()).SendSysMessage(
+                    "你还有未归栏的宠物，请先打开兽栏存入空位（兽栏满则先放生/取出一只），再驯服。");
             return false;
         }
 
@@ -1050,6 +1076,18 @@ namespace
         if (player->getClass() != CLASS_HUNTER)
             return false;
 
+        if (!player->IsAlive())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("死亡状态下不能放生宠物。");
+            return false;
+        }
+
+        if (player->IsInCombat())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("战斗中不能放生宠物。");
+            return false;
+        }
+
         Pet* currentPet = player->GetPet();
         if (currentPet && currentPet->getPetType() == HUNTER_PET &&
             currentPet->GetCharmInfo()->GetPetNumber() == petNumber)
@@ -1070,6 +1108,24 @@ namespace
     // 然后补兽栏槽位/等级，并每次重上 aura 62757 续 2 分钟窗口。
     void SendStableList(Player* player)
     {
+        if (player->getClass() != CLASS_HUNTER)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("只有猎人才能使用兽栏。");
+            return;
+        }
+
+        if (!player->IsAlive())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("死亡状态下无法操作兽栏。");
+            return;
+        }
+
+        if (player->IsInCombat())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("战斗中无法操作兽栏。");
+            return;
+        }
+
         if (player->HasUnitState(UNIT_STATE_DIED))
             player->RemoveAurasByType(SPELL_AURA_FEIGN_DEATH);
         if (player->IsMounted())
@@ -1085,13 +1141,15 @@ namespace
         // 62757 = 召唤兽栏宠物，aura 292 = SPELL_AURA_OPEN_STABLE（2 分钟）。
         // 只在没有 aura 时才加会导致面板开久后窗口过期、列表请求静默失败；
         // 这里每次开/刷新都移除重上，续满时长。
+        // AddAura 成功时 HandleAuraOpenStable 会同步发一次 SendStablePet，
+        // 仅在 AddAura 失败时由模块兜底补发，避免重复下发两份列表。
         player->RemoveAurasDueToSpell(62757);
         if (!player->AddAura(62757, player))
+        {
             LOG_WARN("module", "[mod-wob-bootstrap] AddAura(62757) failed for {}",
                      player->GetName());
-
-        // aura 的 apply handler 已经会 SendStablePet；这里再发一次保证 UI 拿到列表
-        player->GetSession()->SendStablePet(player->GetGUID());
+            player->GetSession()->SendStablePet(player->GetGUID());
+        }
     }
 
     void OpenStable(Player* player)
@@ -1471,6 +1529,94 @@ namespace
         }
     };
 
+    void SendStableErr(WorldSession* session, char const* reason)
+    {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
+        data << uint8(6); // STABLE_ERR_STABLE
+        session->SendPacket(&data);
+        if (reason && *reason)
+            ChatHandler(session).SendSysMessage(reason);
+    }
+
+    class WobBootstrapServerScript : public ServerScript
+    {
+    public:
+        WobBootstrapServerScript()
+            : ServerScript("WobBootstrapServerScript", { SERVERHOOK_CAN_PACKET_RECEIVE }) {}
+
+        bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) override
+        {
+            if (!session)
+                return true;
+
+            uint16 const opcode = packet.GetOpcode();
+            if (opcode != CMSG_STABLE_PET &&
+                opcode != CMSG_UNSTABLE_PET &&
+                opcode != CMSG_STABLE_SWAP_PET)
+            {
+                return true;
+            }
+
+            if (!LoadConfig().enabled)
+                return true;
+
+            Player* player = session->GetPlayer();
+            if (!player || !player->IsInWorld())
+                return true;
+
+            if (!player->IsAlive())
+            {
+                SendStableErr(session, "死亡状态下无法操作兽栏。");
+                return false;
+            }
+
+            if (player->IsInCombat())
+            {
+                SendStableErr(session, "战斗中无法操作兽栏。");
+                return false;
+            }
+
+            if (player->getClass() == CLASS_HUNTER)
+            {
+                if (!player->GetPet() && player->GetTemporaryUnsummonedPetNumber())
+                    player->ResummonPetTemporaryUnSummonedIfAny();
+
+                if (PetStable* st = player->GetPetStable())
+                {
+                    if (!player->GetPet() && st->CurrentPet)
+                    {
+                        SendStableErr(session, "当前宠物处于临时收起状态（骑乘/载具/飞行中），请先解除后再操作兽栏。");
+                        return false;
+                    }
+
+                    if (!player->GetPet() &&
+                        st->UnslottedPets.size() == 1 &&
+                        st->UnslottedPets[0].Type == HUNTER_PET &&
+                        st->UnslottedPets[0].Health == 0)
+                    {
+                        SendStableErr(session, "未召唤的宠物处于死亡状态，请先施放【复活宠物】后再操作兽栏。");
+                        return false;
+                    }
+
+                    if ((opcode == CMSG_UNSTABLE_PET || opcode == CMSG_STABLE_SWAP_PET) &&
+                        !player->GetPet() &&
+                        !st->CurrentPet &&
+                        st->UnslottedPets.size() > 1)
+                    {
+                        SendStableErr(session, "兽栏已满且有多只未归栏宠物，请先腾出空位或放生多余宠物。");
+                        return false;
+                    }
+                }
+
+                // 取出/交换宠物后，下一次 OnPlayerUpdate 重新检查新宠的脏天赋。
+                if (opcode == CMSG_UNSTABLE_PET || opcode == CMSG_STABLE_SWAP_PET)
+                    g_petTalentCleaned.erase(player->GetGUID().GetCounter());
+            }
+
+            return true;
+        }
+    };
+
     class WobBootstrapDatabaseScript : public DatabaseScript
     {
     public:
@@ -1498,4 +1644,5 @@ void AddSC_mod_wob_bootstrap()
     new WobBootstrapWorldScript();
     new WobBootstrapDatabaseScript();
     new WobBootstrapPlayerScript();
+    new WobBootstrapServerScript();
 }
